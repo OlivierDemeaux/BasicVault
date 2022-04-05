@@ -20,15 +20,23 @@ describe('myVault', () => {
   });
 
   it('Should return the correct balance in ETH', async () => {
-    const balance = await myVault.getVaultBalance();
+    const balance = await myVault.getEthBalance();
     assert.equal(balance, 0);
   });
 
-  it('Should send eth from the address to the vault', async () => {
-      const accounts = await hre.ethers.getSigners();
-      const owner = accounts[0];
-      await myVault.depositToVault({value: 1});
-      const balance = await myVault.getVaultBalance();
-      assert.equal(balance, 1);
+  it('Should transfer Eth to vault and vault should convert ETH to wEth', async () => {
+    const accounts = await hre.ethers.getSigners();
+    const sender = accounts[1];
+    const wEthBalancePre = await myVault.getWethBalance()
+    console.log(wEthBalancePre);
+    // assert.equal(wEthBalancePre, 0);
+    console.log('Transfering ETH from: ', sender.address);
+    // await sender.sendTransaction({
+    //   to: myVault.address,
+    //   value:ethers.utils.parseEther('0.01'),
+    // })
+    // await myVault.wrapETH();
+    // const wEthBalancePost = await myVault.getWethBalance()
+    // assert.isAbove(wEthBalancePost, 0);
   })
 });
