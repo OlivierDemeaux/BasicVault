@@ -28,15 +28,15 @@ describe('myVault', () => {
     const accounts = await hre.ethers.getSigners();
     const sender = accounts[1];
     const wEthBalancePre = await myVault.getWethBalance()
-    console.log(wEthBalancePre);
-    // assert.equal(wEthBalancePre, 0);
+    assert.equal(wEthBalancePre, 0);
     console.log('Transfering ETH from: ', sender.address);
-    // await sender.sendTransaction({
-    //   to: myVault.address,
-    //   value:ethers.utils.parseEther('0.01'),
-    // })
-    // await myVault.wrapETH();
-    // const wEthBalancePost = await myVault.getWethBalance()
-    // assert.isAbove(wEthBalancePost, 0);
+    await sender.sendTransaction({
+      to: myVault.address,
+      value:ethers.utils.parseEther('1'),
+    })
+
+    await myVault.wrapETH();
+    const wEthBalancePost = await myVault.getWethBalance()
+    assert.isAbove(wEthBalancePost, 0);
   })
 });
