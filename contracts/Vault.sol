@@ -42,7 +42,7 @@ contract myVault {
     address public chainLinkETHUSDAddress = 0x9326BFA02ADD2366b30bacB125260Af641031331;
 
     uint public ethPrice = 0;                   //needs to be set to 0 and will be updated by Oracle
-    uint public usdTargetPrecentage = 40;       //40% of the fund will be DAI for hedge against volatility
+    uint public usdTargetPercentage = 40;       //40% of the fund will be DAI for hedge against volatility
     uint public usdDividendPercentage = 25;      //Allow withdraw of 25% of the 40% of DAI, so 10% of total value
     uint public dividendFrequency = 3 minutes;   //change to 1 year for prod
     uint public nextDividendTS;
@@ -73,9 +73,90 @@ contract myVault {
         return wethToken.balanceOf(address(this));
     }
 
-    function getEthBalance() external view returns(uint) {
-        return address(this).balance;
+    function getTotalBalance() public view returns(uint) {
+        require(ethPrice > 0, 'ETH price has not been set');
+        uint daiBalance = getDaiBalance();
+        uint wethBalance = getWethBalance();
+        uint wethUSD = wethBalance * ethPrice; // assumes both assets have 18 decimals
+        uint totalBalance = wethUSD + daiBalance;
+        return totalBalance;
     }
+
+    function buyWeth(uint amountUSD) internal {
+        uint256 deadline = block.timestamp + 15;
+        uint24 fee = 3000;
+        address recipient = address(this);
+        uint256 amountIn = amountUSD; // includes 18 decimals
+        uint256 amountOutMinimum = 0;
+        uint160 sqrtPriceLimitX96 = 0;
+        emit myVaultLog('amountIn', amountIn);
+        require(daiToken.approve(address(uinswapV3RouterAddress), amountIn), 'DAI approve failed');
+        ISwapRouter.ExactInputSingleParams memory params = ISwapRouter.ExactInputSingleParams(
+            daiAddress,
+            wethAddress,
+            fee,
+            recipient,
+            deadline,
+            amountIn,
+            amountOutMinimum,
+            sqrtPriceLimitX96
+        );
+        uniswapRouter.exactInputSingle(params);
+        uniswapRouter.refundETH();
+    }
+
+    function sellWeth(uint amountUSD) internal {
+        uint256 deadline = block.timestamp + 15;
+        uint24 fee = 3000;
+        address recipient = address(this);
+        uint256 amountOut = amountUSD; // includes 18 decimals
+        uint256 amountInMaximum = 10 ** 28 ;
+        uint160 sqrtPriceLimitX96 = 0;
+        require(wethToken.approve(address(uinswapV3RouterAddress), amountOut), 'WETH approve failed');
+        ISwapRouter.ExactOutputSingleParams memory params = ISwapRouter.ExactOutputSingleParams(
+            wethAddress,
+            daiAddress,
+            fee,
+            recipient,
+            deadline,
+            amountOut,
+            amountInMaximum,
+            sqrtPriceLimitX96
+        );
+        uniswapRouter.exactOutputSingle(params);
+        uniswapRouter.refundETH();
+    }
+
+    function updateEthPriceUniswap() public returns(uint) {
+        uint ethPriceRaw = quoter.quoteExactOutputSingle(daiAddress,wethAddress,3000,100000,0);
+        ethPrice = ethPriceRaw / 100000;
+        return ethPrice;
+    }
+
+    function updateEthPriceChainlink() public returns(uint) {
+        int256 chainLinkEthPrice = EACAggregatorProxy(chainLinkETHUSDAddress).latestAnswer();
+        ethPrice = uint(chainLinkEthPrice / 100000000);
+        return ethPrice;
+    }
+
+    function rebalance() public {
+    require(msg.sender == owner, "Only the owner can rebalance their account");
+    uint usdBalance = getDaiBalance();
+    uint totalBalance = getTotalBalance();
+    uint usdBalancePercentage = 100 * usdBalance / totalBalance;
+    emit myVaultLog('usdBalancePercentage', usdBalancePercentage);
+    if (usdBalancePercentage < usdTargetPercentage) {
+      uint amountToSell = totalBalance / 100 * (usdTargetPercentage - usdBalancePercentage);
+      emit myVaultLog('amountToSell', amountToSell);
+      require (amountToSell > 0, "Nothing to sell");
+      sellWeth(amountToSell);
+    } else {
+      uint amountToBuy = totalBalance / 100 * (usdBalancePercentage - usdTargetPercentage);
+      emit myVaultLog('amountToBuy', amountToBuy);
+      require (amountToBuy > 0, "Nothing to buy");
+      buyWeth(amountToBuy);
+    }
+  }
 
     receive() external payable {
         // accept ETH, do nothing as it would break the gas fee for a transaction
